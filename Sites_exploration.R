@@ -19,6 +19,7 @@ library(lubridate)
 sites<-read.csv("../Data/Sites.csv")
 data_2016<-read.table("../MilanVinks/captfile.txt")
 obs_all<-read.csv("../MilanVinks/tblSightings_7_17_19.csv")
+cats_suggestions<-read.csv("../Data/ZCP_2022_suggestedChanges_Cat.csv")
 
 #change from degrees to UTM Zone 35S
 sites_latLong <- SpatialPoints(cbind(sites$long, sites$lat), proj4string = CRS("+proj=longlat"))
@@ -32,6 +33,9 @@ par(mfrow = c(1, 2))
 plot(sites_latLong, axes = TRUE, main = "Lat-Long", cex.axis = 0.95)
 plot(sites_UTM, axes = TRUE, main = "UTM 35S", col = "red", cex.axis = 0.95)
 dev.off()
+
+ggplot(as.data.frame(sites_UTM@coords),aes(x=coords.x1,y=coords.x2))+
+  geom_point()
 
 ###Plot ####
 # courtesy R Lovelace
@@ -98,7 +102,8 @@ map_proposedFor2022<-ggmap(ZCP_CTregion_Hybrid)+
   theme_bw()+
   theme(legend.position="bottom")
    
- 
+map_proposedFor2022
+
 
 #### distances ####
 distances_nearest<-knn.dist(sites[,(ncol(sites)-1):ncol(sites)],k=1)
@@ -171,6 +176,7 @@ obs_all_drySeason_Leopard%>%group_by(year(obs_all_drySeason_Leopard$SightingDate
 obs_all_drySeason_Hyena%>%group_by(year(obs_all_drySeason_Hyena$SightingDate))%>%summarize(n())
 
 ### Leopard Plots ####
+
 map_sitesDetsObs_Leop_2012<-ggmap(ZCP_CTregion_Hybrid)+
   geom_point(data=sites,aes(x = long, y = lat,color=`CT Year`),pch=21,size=2) +
   scale_color_manual(values=c( "black", "red"))+
@@ -491,3 +497,52 @@ grid.arrange(map_sitesDetsObs_Leop_2018, map_sitesDetsObs_Hyena_2018, ncol=2)
 #    why the focus on the northeast?
 #    
 #
+
+####new proposition
+cats_suggestions_UTM <- SpatialPoints(cbind(cats_suggestions$long, cats_suggestions$lat), proj4string = CRS("+proj=longlat"))
+cats_suggestions_UTM <- spTransform(cats_suggestions_UTM, CRS("+init=epsg:20935"))
+
+cats_suggestions$UTM_35S_Easting<-cats_suggestions_UTM@coords[,1]
+cats_suggestions$UTM_35S_Northing<-cats_suggestions_UTM@coords[,2]
+cats_suggestions$nCams<-2
+cats_suggestions$nCams[c(12,16,17)]<-1
+
+sites_closer<-sites[c(3,4,11,14,15,16),] #2022 site locations im suggesting we keep
+sites_closer$nCams<-2
+sites_closer$nCams[c(3,5)]<-1 # but reduce to 1 cam for 2 sites
+sites_closer<-plyr::rbind.fill(sites_closer,sites[sites$`CT Year`=="2016",])
+sites_closer$nCams[is.na(sites_closer$nCams)]<-2
+sites_closer<-plyr::rbind.fill(sites_closer,cats_suggestions)
+sites_closer$`CT Year`[is.na(sites_closer$`CT Year`)]<-2022
+
+ggmap(ZCP_CTregion_Hybrid)+
+  geom_point(data=sites_closer,
+             aes(x = long, y = lat,color=`CT Year`, fill=`CT Year`,
+                 pch=as.factor(nCams)),
+             size=2) +
+  scale_color_manual(values=c( "black", "red"))+
+  ggsn::scalebar(sites[,3:4], location = "bottomleft", dist = 5,
+                 st.color="white", st.dist=0.1,
+                 height = 0.05, transform = TRUE, model = "WGS84", dist_unit = "km")+
+  xlim(c(25.95,26.27))+
+  ylim(c(-14.55,-14.3))+
+  labs(x="Longitude",y="Latitude") +
+  theme(plot.title = element_text(hjust = 0.5),legend.position="bottom")+
+  guides(size=guide_legend(nrow=2, byrow=TRUE),
+         color=guide_legend(nrow=2, byrow=TRUE))
+
+#distances
+distances_nearest_proposed<-knn.dist(sites_closer[,5:6],k=1)
+distances_nearest_proposed<-data.frame(Period=rep("Newly Proposed",nrow(distances_nearest_proposed)),
+                                       Meters=distances_nearest_proposed)
+dist_comparison<-rbind(distances_nearest_proposed,distances[distances$Period=="2022",])
+dist_comparison$Period[dist_comparison$Period=="2022"]<-"Originally Proposed"
+ggplot(data=dist_comparison,aes(x=Meters,fill=Period))+
+  geom_histogram(alpha=0.5,position="identity")+
+  scale_fill_manual(values=c("#56B4E9","#E69F00"))+
+  geom_vline(aes(xintercept=mean(Meters[Period=='Newly Proposed'])),
+             color="darkblue", linetype="dashed", size=1)+
+  geom_vline(aes(xintercept=mean(Meters[Period=='Originally Proposed'])),
+             color="darkorange", linetype="dashed", size=1)+
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+        panel.background = element_blank(), axis.line = element_line(colour = "black"))
