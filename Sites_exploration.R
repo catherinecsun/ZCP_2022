@@ -90,9 +90,12 @@ ZCP_CTregion_HybRast <- data.frame(rasterToPoints(ZCP_CTregion_HybRast))
 #   theme_bw()
                           
 map_proposedFor2022<-ggmap(ZCP_CTregion_Hybrid)+
-  geom_point(data=sites,aes(x = long, y = lat,color=`CT Year`),
-             size = 1,show.legend = TRUE) +
-   ggsn::scalebar(sites[,3:4], location = "bottomleft", dist = 5,
+  geom_point(data=sites,aes(x = long, y = lat,color=`CT Year`,
+                            fill=`CT Year`),
+             size = 2,pch=24,show.legend = TRUE) +
+  scale_color_manual(values=c( "black", "red"))+
+  scale_fill_manual(values=c( "black", "red"))+
+  ggsn::scalebar(sites[,3:4], location = "bottomleft", dist = 5,
             st.color="white", st.dist=0.1,
             height = 0.05, transform = TRUE, model = "WGS84", dist_unit = "km")+
   xlim(c(25.95,26.27))+
@@ -104,8 +107,7 @@ map_proposedFor2022<-ggmap(ZCP_CTregion_Hybrid)+
    
 map_proposedFor2022
 
-
-#### distances ####
+####Distances ####
 distances_nearest<-knn.dist(sites[,(ncol(sites)-1):ncol(sites)],k=1)
 distances_nearest_old<-knn.dist(sites[sites$`CT Year`=="2016",(ncol(sites)-1):ncol(sites)],k=1)
 summary(distances_nearest)
@@ -114,7 +116,15 @@ summary(distances_nearest_old)
 distances<-data.frame(Period=c(rep(2022,nrow(distances_nearest)),rep("2016",nrow(distances_nearest_old))),
                       Meters=c(distances_nearest,distances_nearest_old))
 
-ggplot(data=distances,aes(x=Meters,fill=Period))+
+plot_Dists<-ggplot(data=distances[distances$Period==2022,],aes(x=Meters))+
+  geom_histogram(alpha=0.5,position="identity")+
+  xlim(1000,2700)+
+  geom_vline(aes(xintercept=mean(Meters)),
+              linetype="dashed", size=1)+
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+        panel.background = element_blank(), axis.line = element_line(colour = "black"))
+
+plot_Dists_v2<-ggplot(data=distances,aes(x=Meters,fill=Period))+
   geom_histogram(alpha=0.5,position="identity")+
   scale_fill_manual(values=c("#56B4E9","#E69F00"))+
   geom_vline(aes(xintercept=mean(Meters[Period=='2022'])),
@@ -515,11 +525,12 @@ sites_closer$nCams[is.na(sites_closer$nCams)]<-2
 sites_closer<-plyr::rbind.fill(sites_closer,cats_suggestions)
 sites_closer$`CT Year`[is.na(sites_closer$`CT Year`)]<-2022
 
-ggmap(ZCP_CTregion_Hybrid)+
+plot_proposedLocs<-ggmap(ZCP_CTregion_Hybrid)+
   geom_point(data=sites_closer,
              aes(x = long, y = lat,color=`CT Year`, fill=`CT Year`,
-                 pch=as.factor(nCams)),
+                 pch=as.factor(nCams),show.legend=FALSE),
              size=2) +
+  #scale_color_continuous(guide = "none") +
   scale_color_manual(values=c( "black", "red"))+
   ggsn::scalebar(sites[,3:4], location = "bottomleft", dist = 5,
                  st.color="white", st.dist=0.1,
@@ -537,12 +548,52 @@ distances_nearest_proposed<-data.frame(Period=rep("Newly Proposed",nrow(distance
                                        Meters=distances_nearest_proposed)
 dist_comparison<-rbind(distances_nearest_proposed,distances[distances$Period=="2022",])
 dist_comparison$Period[dist_comparison$Period=="2022"]<-"Originally Proposed"
-ggplot(data=dist_comparison,aes(x=Meters,fill=Period))+
-  geom_histogram(alpha=0.5,position="identity")+
-  scale_fill_manual(values=c("#56B4E9","#E69F00"))+
+
+plot_proposedDists<-ggplot(data=dist_comparison[dist_comparison$Period=="Newly Proposed",],aes(x=Meters))+ #,fill=Period
+  geom_histogram(alpha=0.5,fill="red",position="identity")+
+  #scale_fill_manual(values=c("red"))+ #,"gray"
+  xlim(1000,2700)+
   geom_vline(aes(xintercept=mean(Meters[Period=='Newly Proposed'])),
-             color="darkblue", linetype="dashed", size=1)+
-  geom_vline(aes(xintercept=mean(Meters[Period=='Originally Proposed'])),
-             color="darkorange", linetype="dashed", size=1)+
+             color="darkred", linetype="dashed", size=1)+
   theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
         panel.background = element_blank(), axis.line = element_line(colour = "black"))
+
+
+### points to polygons for convex hulls
+chull_wBuff_proposedPrev2022<-st_buffer(dist=5000,st_as_sf(sites, coords=c("UTM_35S_Easting","UTM_35S_Northing")))
+chull_wBuff_proposedPrev2022<-st_union(chull_wBuff_proposedPrev2022)
+st_crs(chull_wBuff_proposedPrev2022) <- "+init=epsg:20935" #set the CRS
+chull_wBuff_proposedPrev2022<-st_transform(chull_wBuff_proposedPrev2022, "+proj=longlat") # change to lat logn
+st_area(chull_wBuff_proposedPrev2022) #622.5 km2
+
+map_proposedFor2022+ # cat's proposed
+  geom_sf(data = chull_wBuff_proposedPrev2022, colour = "black", fill = NA,inherit.aes = FALSE)+
+  geom_sf(data = chull_wBuff_proposed, color =alpha("red",0.3), fill = NA,inherit.aes = FALSE)
+
+  
+
+chull_wBuff_proposed<-st_buffer(dist=5000,st_as_sf(sites_closer, coords=c("UTM_35S_Easting","UTM_35S_Northing")))
+chull_wBuff_proposed<-st_union(chull_wBuff_proposed)
+st_crs(chull_wBuff_proposed) <- "+init=epsg:20935" #set the CRS
+chull_wBuff_proposed<-st_transform(chull_wBuff_proposed, "+proj=longlat") # change to lat logn
+st_area(chull_wBuff_proposed)#565.9 km2
+
+plot_proposedLocs+
+  geom_sf(data = chull_wBuff_proposed, colour = "red", fill = NA,inherit.aes = FALSE)
+
+####comparison of newly proposed by Cat vs originally proposed
+plot_Dists
+plot_proposedDists
+
+plot_proposedLocs
+map_proposedFor2022
+
+grid.arrange(map_proposedFor2022+
+               geom_sf(data = chull_wBuff_proposedPrev2022, colour = "black", fill = NA,inherit.aes = FALSE)+
+              theme(legend.position="none"),
+             plot_proposedLocs+
+               geom_sf(data = chull_wBuff_proposedPrev2022, colour = "black", fill = NA,inherit.aes = FALSE)+
+               geom_sf(data = chull_wBuff_proposed, color =alpha("red",0.3), fill = NA,inherit.aes = FALSE)+
+               theme(legend.position="none"),
+             plot_Dists,plot_proposedDists+ theme(legend.position="none"),
+             ncol = 2, nrow = 2)
